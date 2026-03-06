@@ -1,0 +1,13 @@
+[Unit]
+Description=Set monitors brightness
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/<user>/.local/bin/brightness_scheduler/brightness_scheduler
+Nice=19
+CPUSchedulingPolicy=idle
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=graphical-session.target

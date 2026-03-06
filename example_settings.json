@@ -1,0 +1,37 @@
+{
+  "monitors": [
+    "HDMI-A-1",
+    "HDMI-A-2",
+    "DP-1"
+  ],
+  "timestamps": [
+    {
+      "hour": 0,
+      "brightness": 30
+    },
+    {
+      "hour": 8,
+      "brightness": 50
+    },
+    {
+      "hour": 9,
+      "brightness": 80
+    },
+    {
+      "hour": 11,
+      "brightness": 100
+    },
+    {
+      "hour": 16,
+      "brightness": 80
+    },
+    {
+      "hour": 19,
+      "brightness": 50
+    },
+    {
+      "hour": 20,
+      "brightness": 30
+    }
+  ]
+}
