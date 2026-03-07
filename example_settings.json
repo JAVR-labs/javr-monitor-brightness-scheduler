@@ -11,7 +11,7 @@
     },
     {
       "hour": 8,
-      "brightness": 50
+      "brightness": [45, 45, 30]
     },
     {
       "hour": 9,
@@ -31,7 +31,7 @@
     },
     {
       "hour": 20,
-      "brightness": 30
+      "brightness": [45, 45, 30]
     }
   ]
 }

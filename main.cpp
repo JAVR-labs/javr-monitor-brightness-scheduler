@@ -1,5 +1,7 @@
 #include <iostream>
 #include <string_view>
+#include <vector>
+#include <optional>
 
 #include <fstream>
 #include <QProcess>
@@ -18,25 +20,90 @@ constexpr std::string_view TIMESTAMPS = "timestamps";
 constexpr std::string_view TIMESTAMP_HOUR = "hour";
 constexpr std::string_view TIMESTAMP_BRIGHTNESS = "brightness";
 
+using optVecOfStr = std::optional<std::vector<std::string> >;
+
 std::filesystem::path getExePath() {
     char path[PATH_MAX];
     ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);
     return {std::string(path, (count > 0) ? count : 0)};
 }
 
-void setBrightness(const json & monitors, int value) {
-    value = value > 100 ? 100 : value < 0 ? 0 : value;
+using optVecOfStr = std::optional<std::vector<std::string> >;
+
+optVecOfStr getMonitorsNames(const json &monitorsJson) {
+    optVecOfStr result = std::vector<std::string>{};;
+    result->reserve(monitorsJson.size());
+    for (const auto &monitor: monitorsJson) {
+        try {
+            result->push_back(monitor.get<std::string>());
+        } catch (const std::exception &e) {
+            std::cerr << "Failed to load monitors array - " << e.what() << std::endl;
+            return std::nullopt;
+        }
+    }
+    return result;
+}
+
+void setBrightness(const std::vector<std::string> &monitors, int value) {
+    value = (value > 100) ? 100 : (value < 0) ? 0 : value;
 
     for (const auto &monitor: monitors) {
         std::cout << "Setting monitor " << monitor << " brightness to: " << value << "%" << '\n';
         QStringList kscreenArgs = {
-            QString("output.%1.brightness.%2").arg(monitor.get<std::string>()).arg(value)
+            QString("output.%1.brightness.%2").arg(monitor).arg(value)
         };
         QProcess::execute("kscreen-doctor", kscreenArgs);
     }
 }
 
-int autoSet(const json &monitors, const json &timestamps) {
+int setBrightness(const std::vector<std::string> &monitors, std::vector<int> values) {
+    if (values.size() != monitors.size()) {
+        std::cerr << "Wrong length of brightness array" << std::endl;
+        return 6;
+    }
+
+    for (auto &value: values) {
+        value = (value > 100) ? 100 : (value < 0) ? 0 : value;
+    }
+
+    for (uint8_t i = 0; i < monitors.size(); i++) {
+        std::cout << "Setting monitor " << monitors[i] << " brightness to: " << values[i] << "%" << '\n';
+        QStringList kscreenArgs = {
+            QString("output.%1.brightness.%2").arg(monitors[i]).arg(values[i])
+        };
+        QProcess::execute("kscreen-doctor", kscreenArgs);
+    }
+    return 0;
+}
+
+struct BrightnessData {
+    explicit BrightnessData(const json &jsonData) {
+        if (jsonData.is_array()) {
+            vectorValue = std::vector<int>{};
+            for (const auto &value: jsonData) {
+                try {
+                    vectorValue->push_back(value.get<int>());
+                } catch (const std::exception &e) {
+                    std::cerr << "Failed to load timestamp brightness array - " << e.what() << std::endl;
+                    vectorValue.reset();
+                    break;
+                }
+            }
+        } else {
+            try {
+                intValue.emplace(jsonData.get<int>());
+            } catch (const std::exception &e) {
+                std::cerr << "Failed to load timestamp brightness value - " << e.what() << std::endl;
+                intValue.reset();
+            }
+        }
+    }
+
+    std::optional<std::vector<int> > vectorValue;
+    std::optional<int> intValue;
+};
+
+int autoSet(const std::vector<std::string> &monitors, const json &timestamps) {
     const int currentHour = QDateTime::currentDateTime().time().hour();
 
     uint8_t index = 0;
@@ -46,7 +113,7 @@ int autoSet(const json &monitors, const json &timestamps) {
             hour = timestamp[TIMESTAMP_HOUR].get<int>();
         } catch (const std::exception &e) {
             std::cerr << "Failed to load timestamp hour - " << e.what() << '\n';
-            return 1;
+            return 7;
         }
 
         if (currentHour < hour) {
@@ -54,19 +121,19 @@ int autoSet(const json &monitors, const json &timestamps) {
         }
         index++;
     }
-
     if (index != 0) index--;
 
-    int brightness;
-    try {
-        brightness = timestamps[index][TIMESTAMP_BRIGHTNESS].get<int>();
-    } catch (const std::exception &e) {
-        std::cerr << "Failed to load timestamp brightness - " << e.what() << '\n';
-        return 1;
+    const BrightnessData brightnessData(timestamps[index][TIMESTAMP_BRIGHTNESS]);
+    if (brightnessData.intValue.has_value()) {
+        setBrightness(monitors, brightnessData.intValue.value());
+        return 0;
+    }
+    if (brightnessData.vectorValue.has_value()) {
+        setBrightness(monitors, brightnessData.vectorValue.value());
+        return 0;
     }
 
-    setBrightness(monitors, brightness);
-    return 0;
+    return 8;
 }
 
 int main(const int argc, char *argv[]) {
@@ -80,23 +147,27 @@ int main(const int argc, char *argv[]) {
     const json data = json::parse(file);
     if (!data.contains(MONITORS) || !data.contains(TIMESTAMPS)) {
         std::cerr << "Invalid settings.json" << '\n';
-        return 1;
+        return 2;
     }
 
-    const json &monitors = data[MONITORS];
+    // read monitors data
+    optVecOfStr monitors = getMonitorsNames(data[MONITORS]);
+    if (!monitors.has_value()) return 3;
+
+    // read timestamps data
     const json &timestamps = data[TIMESTAMPS];
 
     if (argc < 2) {
-        return autoSet(monitors, timestamps);
+        return autoSet(monitors.value(), timestamps);
     }
 
     bool ok;
     const int value = QString(argv[1]).toInt(&ok);
     if (!ok) {
         std::cerr << "Argument must be an integer." << '\n';
-        return 1;
+        return 4;
     }
 
-    setBrightness(monitors, value);
+    setBrightness(monitors.value(), value);
     return 0;
 }

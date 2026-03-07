@@ -1,9 +1,9 @@
-# Brightness Scheduler
+# Monitor Brightness Scheduler
 
 ## Requirements
 `sudo dnf install qt6-qtbase-devel cmake gcc-c++ kscreen`
 
-## Monitor check
+## Checking monitor names
 `kscreen-doctor --outputs | sed 's/\x1b\[[0-9;]*m//g' | grep "^Output:" | awk '{print $3}'`
 
 ## How to use
@@ -14,14 +14,36 @@
 5. change \<user\> in path "ExecStart=/home/\<user\>/.local/bin/brightness_scheduler/brightness_scheduler" in brightness_sheduler.service 
 6. `cp brightness_scheduler.service ~/.config/systemd/user/brightness_scheduler.service`
 7. `cp brightness_scheduler.timer ~/.config/systemd/user/brightness_scheduler.timer`
-8. create and setup settings.json in ~/.local/bin/brightness_scheduler like settings_example.json (first timestamp must starts with "hour": 0)
+8. create and setup settings.json in ~/.local/bin/brightness_scheduler like example_settings.json ()
 9. `systemctl --user daemon-reload`
 10. `systemctl --user enable --now brightness_scheduler.service`
 11. `systemctl --user enable --now brightness_scheduler.timer`
+
+## settings.json
+### Monitors
+"monitors" must be an array of strings containing values from the "Checking monitor names" command.
+
+### Timestamps
+The first timestamp must starts with "hour": 0. \
+\
+Each timestamp must be in format: \
+(same brightness on all monitors) \
+{\
+    "hour": \<int value\>, \
+    "brightness": \<int value\>  \
+}\
+\
+OR \
+\
+(different brightness on different monitors) \
+{\
+"hour": \<int value\>, \
+"brightness": \<array\<int\>\[number of monitors\]\>  \
+}\
 
 ## Additional
 override to next timestamp
 `~/.local/bin/brightness_scheduler/brightness_scheduler <value>`
 
-restore default[.gitignore](.gitignore)
+restore default
 `~/.local/bin/brightness_scheduler/brightness_scheduler`
