@@ -39,11 +39,13 @@ OR \
 {\
 "hour": \<int value\>, \
 "brightness": \<array\<int\>\[number of monitors\]\>  \
-}\
+}
 
 ## Additional
-override to next timestamp
-`~/.local/bin/brightness_scheduler/brightness_scheduler <value>`
+override to next timestamp \
+`~/.local/bin/brightness_scheduler/brightness_scheduler <value>` (same brightness on all monitors)
 
-restore default
+`~/.local/bin/brightness_scheduler/brightness_scheduler <multiple values seprate with space>` (different brightness on different monitors)
+
+restore default \
 `~/.local/bin/brightness_scheduler/brightness_scheduler`

@@ -161,13 +161,32 @@ int main(const int argc, char *argv[]) {
         return autoSet(monitors.value(), timestamps);
     }
 
-    bool ok;
-    const int value = QString(argv[1]).toInt(&ok);
-    if (!ok) {
-        std::cerr << "Argument must be an integer." << '\n';
-        return 4;
+    if (argc == 2) {
+        bool ok;
+        const int value = QString(argv[1]).toInt(&ok);
+        if (!ok) {
+            std::cerr << "Arguments must be integers" << '\n';
+            return 4;
+        }
+        setBrightness(monitors.value(), value);
+    } else {
+        if (argc - 1 != monitors.value().size()) {
+            std::cerr << "Wrong number of arguments" << std::endl;
+            return 6;
+        }
+        bool ok;
+        std::vector<int> values;
+        values.reserve(monitors.value().size());
+        for (uint8_t i = 1; i < argc; i++) {
+            int tmp = QString(argv[i]).toInt(&ok);
+            if (!ok) {
+                std::cerr << "Arguments must be integers" << '\n';
+                return 4;
+            }
+            values.push_back(tmp);
+        }
+        setBrightness(monitors.value(), values);
     }
 
-    setBrightness(monitors.value(), value);
     return 0;
 }
