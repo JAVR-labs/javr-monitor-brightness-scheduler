@@ -7,6 +7,7 @@
 #include <QProcess>
 #include <QString>
 #include <QDateTime>
+#include <QThread>
 
 #include <filesystem>
 #include <unistd.h>
@@ -19,6 +20,7 @@ constexpr std::string_view MONITORS = "monitors";
 constexpr std::string_view TIMESTAMPS = "timestamps";
 constexpr std::string_view TIMESTAMP_HOUR = "hour";
 constexpr std::string_view TIMESTAMP_BRIGHTNESS = "brightness";
+constexpr int PROCESS_TIMEOUT = 5000;
 
 using optVecOfStr = std::optional<std::vector<std::string> >;
 
@@ -26,6 +28,48 @@ std::filesystem::path getExePath() {
     char path[PATH_MAX];
     ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);
     return {std::string(path, (count > 0) ? count : 0)};
+}
+
+void handleProcessEnd(QProcess &process) {
+    if (!process.waitForFinished(PROCESS_TIMEOUT)) {
+        std::cerr << "Force termination of child process\n";
+        process.terminate();
+        if (!process.waitForFinished(PROCESS_TIMEOUT)) {
+            std::cerr << "Force kill of child process\n";
+            process.kill();
+            process.waitForFinished();
+        }
+    }
+}
+
+std::optional<int> getMonitorBrightness(const std::string &monitor) {
+    const QString awkScript = QString(
+        "/Output:/ { found = ($0 ~ mon) } "
+        "found && /Brightness control/ { match($0, /set to ([0-9]+)/, a); print a[1]; found=0 }"
+    );
+
+    QProcess kscreen;
+    QProcess awk;
+
+    kscreen.setStandardOutputProcess(&awk);
+
+    awk.start(
+        "nice",
+        QStringList() << "-n" << "19"
+        << "awk" << "-v" << QString("mon=%1").arg(monitor) << awkScript
+    );
+    kscreen.start(
+        "nice",
+        QStringList() << "-n" << "19"
+        << "kscreen-doctor" << "-o"
+    );
+
+    handleProcessEnd(kscreen);
+    handleProcessEnd(awk);
+    QString tmp = QString::fromUtf8(awk.readAllStandardOutput()).trimmed();
+    bool ok;
+    int result = tmp.toInt(&ok);
+    return ok ? std::optional<int>(result) : std::nullopt;
 }
 
 using optVecOfStr = std::optional<std::vector<std::string> >;
@@ -44,18 +88,6 @@ optVecOfStr getMonitorsNames(const json &monitorsJson) {
     return result;
 }
 
-void setBrightness(const std::vector<std::string> &monitors, int value) {
-    value = (value > 100) ? 100 : (value < 0) ? 0 : value;
-
-    for (const auto &monitor: monitors) {
-        std::cout << "Setting monitor " << monitor << " brightness to: " << value << "%" << '\n';
-        QStringList kscreenArgs = {
-            QString("output.%1.brightness.%2").arg(monitor).arg(value)
-        };
-        QProcess::execute("kscreen-doctor", kscreenArgs);
-    }
-}
-
 int setBrightness(const std::vector<std::string> &monitors, std::vector<int> values) {
     if (values.size() != monitors.size()) {
         std::cerr << "Wrong length of brightness array" << std::endl;
@@ -66,14 +98,50 @@ int setBrightness(const std::vector<std::string> &monitors, std::vector<int> val
         value = (value > 100) ? 100 : (value < 0) ? 0 : value;
     }
 
-    for (uint8_t i = 0; i < monitors.size(); i++) {
+    std::vector<int> currentBrightness;
+    for (size_t i = 0; i < monitors.size(); i++) {
+        currentBrightness.push_back(
+            getMonitorBrightness(monitors[i]).value_or(values[i])
+        );
         std::cout << "Setting monitor " << monitors[i] << " brightness to: " << values[i] << "%" << '\n';
-        QStringList kscreenArgs = {
-            QString("output.%1.brightness.%2").arg(monitors[i]).arg(values[i])
-        };
-        QProcess::execute("kscreen-doctor", kscreenArgs);
     }
+
+    bool isDifferentBrightness;
+    do {
+        isDifferentBrightness = false;
+        for (size_t i = 0; i < monitors.size(); i++) {
+            if (values[i] > currentBrightness[i]) {
+                if (values[i] > currentBrightness[i] + 10) {
+                    currentBrightness[i]+= 10;
+                } else {
+                    currentBrightness[i]++;
+                }
+                isDifferentBrightness = true;
+            } else if (values[i] < currentBrightness[i]) {
+                if (values[i] < currentBrightness[i] - 10) {
+                    currentBrightness[i]-= 10;
+                } else {
+                    currentBrightness[i]--;
+                }
+                isDifferentBrightness = true;
+            }
+            QStringList kscreenArgs = {
+                QString("output.%1.brightness.%2").arg(monitors[i]).arg(currentBrightness[i])
+            };
+            QProcess::execute("kscreen-doctor", kscreenArgs);
+        }
+        sleep(1);
+    } while (isDifferentBrightness);
     return 0;
+}
+
+void setBrightness(const std::vector<std::string> &monitors, int value) {
+    value = (value > 100) ? 100 : (value < 0) ? 0 : value;
+    std::vector<int> values;
+    for (size_t i = 0; i < monitors.size(); i++) {
+        values.push_back(value);
+    }
+    setBrightness(monitors, values);
 }
 
 struct BrightnessData {
@@ -153,6 +221,10 @@ int main(const int argc, char *argv[]) {
     // read monitors data
     optVecOfStr monitors = getMonitorsNames(data[MONITORS]);
     if (!monitors.has_value()) return 3;
+
+    for (const auto &monitor: monitors.value()) {
+        std::cout << "Jej " << monitor << ": " << getMonitorBrightness(monitor).value_or(-1) << "\n";
+    }
 
     // read timestamps data
     const json &timestamps = data[TIMESTAMPS];
